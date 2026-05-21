@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-containers}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  bot:
+    image: ghcr.io/djalaljkeee/contaoner-bot:${BOT_IMAGE_TAG:-latest}
+    # build остаётся на случай локальной сборки (`docker compose build`).
+    # На VPS используется только `docker compose pull` — слой build игнорируется.
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_URL: postgresql+asyncpg://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containers}
+    command: sh -c "python -m scripts.seed && exec python -m bot"
+
+volumes:
+  pg_data:
