@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _split_admin_ids(cls, v):
+        if v is None or v == "":
+            return []
+        if isinstance(v, int):
+            return [v]
         if isinstance(v, str):
             return [int(x.strip()) for x in v.split(",") if x.strip()]
         return v
