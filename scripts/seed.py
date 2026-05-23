@@ -3,9 +3,10 @@
 Идемпотентно — повторный запуск ничего не сломает.
 """
 import asyncio
+import logging
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 
 from bot.db.base import SessionLocal, engine
 from bot.db.models import (
@@ -111,9 +112,23 @@ PRODUCTS: list[tuple[str, str, str, int, int, int, str | None, str, int]] = [
 ]
 
 
+log = logging.getLogger(__name__)
+
+
+def _ensure_schema(sync_conn) -> None:
+    """Drop legacy schema (iz-konteynerov.rf) and create the new one if needed."""
+    inspector = sa_inspect(sync_conn)
+    if inspector.has_table("products"):
+        cols = {c["name"] for c in inspector.get_columns("products")}
+        if "kind" in cols or "category_id" in cols or "type" not in cols:
+            log.warning("Legacy schema detected — dropping all tables and recreating")
+            Base.metadata.drop_all(sync_conn)
+    Base.metadata.create_all(sync_conn)
+
+
 async def seed() -> None:
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_schema)
 
     async with SessionLocal() as session:
         # --- calc_options ---
