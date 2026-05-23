@@ -5,12 +5,26 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from bot.config import settings
 from bot.db.base import SessionLocal, engine
 from bot.db.models import Base
 from bot.handlers import about, calculator, catalog, lead, start
+
+log = logging.getLogger(__name__)
+
+
+def _migrate_schema(sync_conn) -> None:
+    """Drop old schema and recreate if the products table uses the legacy structure."""
+    inspector = sa_inspect(sync_conn)
+    if inspector.has_table("products"):
+        cols = {c["name"] for c in inspector.get_columns("products")}
+        if "kind" in cols or "category_id" in cols or "type" not in cols:
+            log.warning("Old schema detected — dropping all tables and recreating for konteiner24")
+            Base.metadata.drop_all(sync_conn)
+    Base.metadata.create_all(sync_conn)
 
 
 class DbSessionMiddleware:
@@ -30,7 +44,7 @@ async def main() -> None:
     )
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_schema)
 
     bot = Bot(
         token=settings.bot_token,
