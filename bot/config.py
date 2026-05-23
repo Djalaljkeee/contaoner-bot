@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     admin_ids: list[int] = Field(default_factory=list, alias="ADMIN_IDS")
 
     company_name: str = Field(default="КОНТЕЙНЕР 24", alias="COMPANY_NAME")
-    company_phone: str = Field(default="8 (965) 555-33-66", alias="COMPANY_PHONE")
-    company_phone2: str = Field(default="+7 909 154-15-51", alias="COMPANY_PHONE2")
+    company_phone: str = Field(default="+7 966 888-12-22", alias="COMPANY_PHONE")
+    company_phone2: str = Field(default="+7 965 555-33-66", alias="COMPANY_PHONE2")
     company_email: str = Field(default="petrix.fin@mail.ru", alias="COMPANY_EMAIL")
     company_site: str = Field(default="https://konteiner24.ru", alias="COMPANY_SITE")
     company_address_base: str = Field(
