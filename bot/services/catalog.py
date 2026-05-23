@@ -1,46 +1,34 @@
+from typing import Optional
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from bot.db.models import Category, Product, ProductKind, ProductPhoto
-
-
-async def list_active_categories(session: AsyncSession) -> list[Category]:
-    result = await session.execute(
-        select(Category)
-        .where(Category.is_active.is_(True))
-        .order_by(Category.sort_order, Category.id)
-    )
-    return list(result.scalars().all())
-
-
-async def get_category(session: AsyncSession, category_id: int) -> Category | None:
-    return await session.get(Category, category_id)
+from bot.db.models import ContainerSpec, Product, ProductPhoto, ProductType
 
 
 async def list_products(
     session: AsyncSession,
-    category_id: int,
-    kind: ProductKind = ProductKind.model,
+    product_type: ProductType,
+    container_spec: Optional[ContainerSpec] = None,
 ) -> list[Product]:
-    result = await session.execute(
-        select(Product)
-        .where(
-            Product.category_id == category_id,
-            Product.kind == kind,
-            Product.is_active.is_(True),
-        )
-        .order_by(Product.sort_order, Product.area_m2.asc(), Product.id)
+    q = select(Product).where(
+        Product.type == product_type,
+        Product.is_active.is_(True),
     )
+    if container_spec is not None:
+        q = q.where(Product.container_spec == container_spec)
+    q = q.order_by(Product.sort_order, Product.id)
+    result = await session.execute(q)
     return list(result.scalars().all())
 
 
 async def get_product_with_photos(
     session: AsyncSession, product_id: int
-) -> Product | None:
+) -> Optional[Product]:
     result = await session.execute(
         select(Product)
-        .options(selectinload(Product.photos), selectinload(Product.category))
+        .options(selectinload(Product.photos))
         .where(Product.id == product_id, Product.is_active.is_(True))
     )
     return result.scalar_one_or_none()

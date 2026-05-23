@@ -1,9 +1,9 @@
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.models import Lead, LeadSource, LeadStatus
+from bot.db.models import Lead, LeadSource, LeadStatus, LeadType
 
 
 async def create_lead(
@@ -13,14 +13,18 @@ async def create_lead(
     phone: str,
     message: Optional[str],
     source: LeadSource,
+    lead_type: LeadType = LeadType.regular,
     product_id: Optional[int] = None,
+    calc_config: Optional[Any] = None,
 ) -> Lead:
     lead = Lead(
         user_id=user_id,
         product_id=product_id,
+        type=lead_type,
         name=name,
         phone=phone,
         message=message,
+        calc_config=calc_config,
         source=source,
         status=LeadStatus.new,
     )
@@ -33,10 +37,6 @@ async def create_lead(
 async def take_lead(
     session: AsyncSession, lead_id: int, manager_id: int
 ) -> Optional[Lead]:
-    """
-    Атомарно: ставит manager_id и статус 'in_progress', только если manager_id ещё NULL.
-    Возвращает Lead при успехе, None если заявка уже взята.
-    """
     result = await session.execute(
         update(Lead)
         .where(Lead.id == lead_id, Lead.manager_id.is_(None))

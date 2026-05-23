@@ -14,9 +14,21 @@ class Settings(BaseSettings):
     managers_chat_id: int = Field(alias="MANAGERS_CHAT_ID")
     admin_ids: list[int] = Field(default_factory=list, alias="ADMIN_IDS")
 
-    company_phone: str = Field(default="+7 985 888-58-86", alias="COMPANY_PHONE")
-    company_email: str = Field(default="9858885886@mail.ru", alias="COMPANY_EMAIL")
-    company_site: str = Field(default="https://из-контейнеров.рф", alias="COMPANY_SITE")
+    company_name: str = Field(default="КОНТЕЙНЕР 24", alias="COMPANY_NAME")
+    company_phone: str = Field(default="8 (965) 555-33-66", alias="COMPANY_PHONE")
+    company_phone2: str = Field(default="+7 909 154-15-51", alias="COMPANY_PHONE2")
+    company_email: str = Field(default="petrix.fin@mail.ru", alias="COMPANY_EMAIL")
+    company_site: str = Field(default="https://konteiner24.ru", alias="COMPANY_SITE")
+    company_address_base: str = Field(
+        default="Москва, ул. Котляковская, 6 (база отгрузки)",
+        alias="COMPANY_ADDRESS_BASE",
+    )
+    company_address_office: str = Field(
+        default="Москва, Каширское шоссе, 61 к3а (офис)",
+        alias="COMPANY_ADDRESS_OFFICE",
+    )
+
+    delivery_rate_per_km: int = Field(default=55, alias="DELIVERY_RATE_PER_KM")
 
     @field_validator("admin_ids", mode="before")
     @classmethod

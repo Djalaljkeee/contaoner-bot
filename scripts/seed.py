@@ -1,38 +1,113 @@
 """
-Засев каталога: 7 категорий + 8 моделей Skandy House с локальными фото.
+Засев данных для konteiner24.ru: продукты, опции калькулятора, города доставки.
 Идемпотентно — повторный запуск ничего не сломает.
 """
 import asyncio
 from decimal import Decimal
-from pathlib import Path
 
 from sqlalchemy import select
 
 from bot.db.base import SessionLocal, engine
-from bot.db.models import Base, Category, Product, ProductKind, ProductPhoto
+from bot.db.models import (
+    Base,
+    BadgeType,
+    CalcOption,
+    CalcOptionGroup,
+    ContainerSpec,
+    DeliveryCity,
+    Product,
+    ProductType,
+)
 
-PHOTO_DIR = Path(__file__).resolve().parent.parent / "data" / "photos"
-
-CATEGORIES: list[tuple[str, str, int]] = [
-    ("residential", "🏠 Жилые дома", 10),
-    ("guest",       "🛏 Гостевые дома", 20),
-    ("offices",     "🏢 Офисы и шоурумы", 30),
-    ("cafes",       "🍔 Кафе и киоски", 40),
-    ("shops",       "🛍 Магазины", 50),
-    ("sheds",       "🧰 Сараи и склады", 60),
-    ("misc",        "🧱 Разное (бани, бассейны, авто, спец.)", 70),
+# (group, title, price_delta, area_m2, sort_order)
+CALC_OPTIONS: list[tuple[str, str, int, int | None, int]] = [
+    # modules
+    ("module",     "20ft — 14 м²",                      790_000, 14, 10),
+    ("module",     "40ft — 28 м²",                    1_850_000, 28, 20),
+    ("module",     "2×40ft — 56 м² (два этажа)",      3_450_000, 56, 30),
+    # insulation
+    ("insulation", "Стандарт 50 мм",                          0, None, 10),
+    ("insulation", "Усиленная 100 мм",                  120_000, None, 20),
+    ("insulation", "Премиум 150 мм с пароизоляцией",    250_000, None, 30),
+    # foundation
+    ("foundation", "Бетонные блоки",                     90_000, None, 10),
+    ("foundation", "Винтовые сваи",                     180_000, None, 20),
+    ("foundation", "Монолитная плита",                  350_000, None, 30),
+    # interior
+    ("interior",   "Черновая отделка",                        0, None, 10),
+    ("interior",   "Чистовая отделка",                  280_000, None, 20),
+    ("interior",   "Под ключ",                           650_000, None, 30),
+    # windows
+    ("windows",    "Без окон",                                0, None, 10),
+    ("windows",    "Энергосберегающие",                  150_000, None, 20),
+    ("windows",    "Панорамные",                         450_000, None, 30),
 ]
 
-# (category_slug, model_name, area_m2, photo_file, sort_order, source_url)
-SKANDY_MODELS: list[tuple[str, str, int, str, int, str]] = [
-    ("residential", "Кама",   15, "15-Kama.png",   10, "https://из-контейнеров.рф/проект-кама-15м-²-дом-из-морского-кон/"),
-    ("residential", "Обь",    30, "30-Ob.png",     20, "https://из-контейнеров.рф/проект-обь-30м-²-дом-из-морского-конт/"),
-    ("residential", "Волга",  30, "30-Volga.png",  21, "https://из-контейнеров.рф/проект-волга-30м-²-дом-из-морского-ко/"),
-    ("residential", "Ока",    30, "30-Oka.jpg",    22, "https://из-контейнеров.рф/проект-ока-30м-²-дом-из-морского-конт/"),
-    ("residential", "Иртыш",  45, "45-Irtish.png", 30, "https://из-контейнеров.рф/проект-иртыш-45м-²-дом-из-морского-ко/"),
-    ("residential", "Лена",   45, "45-2Lena.png",  31, "https://из-контейнеров.рф/проект-лена-45м-²-дом-из-морского-кон/"),
-    ("residential", "Енисей", 60, "60-Enisei.png", 40, "https://из-контейнеров.рф/проект-енисей-60м-²-дом-из-морского-к/"),
-    ("residential", "Амур",   90, "90-Amur.png",   50, "https://из-контейнеров.рф/проект-амур-90м-²-дом-из-морского-кон/"),
+# (name, distance_km, sort_order)
+DELIVERY_CITIES: list[tuple[str, int, int]] = [
+    ("Самовывоз (Москва, ул. Котляковская, 6)",    0,     0),
+    ("Тверь",                                     170,   10),
+    ("Тула",                                      180,   11),
+    ("Калуга",                                    190,   12),
+    ("Рязань",                                    195,   13),
+    ("Владимир",                                  190,   14),
+    ("Ярославль",                                 260,   15),
+    ("Иваново",                                   300,   16),
+    ("Нижний Новгород",                           410,   20),
+    ("Воронеж",                                   500,   30),
+    ("Санкт-Петербург",                           710,   40),
+    ("Казань",                                    820,   50),
+    ("Самара",                                  1_050,   60),
+    ("Ростов-на-Дону",                          1_070,   70),
+    ("Краснодар",                               1_340,   80),
+    ("Уфа",                                     1_340,   90),
+    ("Екатеринбург",                            1_780,  100),
+    ("Новосибирск",                             3_300,  110),
+]
+
+# (type, container_spec, title, area_m2, price_from, build_days, badge, description, sort_order)
+PRODUCTS: list[tuple[str, str, str, int, int, int, str | None, str, int]] = [
+    (
+        "house", "40ft", "Модерн Блэк 40ft",
+        28, 1_850_000, 45, "hit",
+        "Современный минималистичный дом с чёрным фасадом. "
+        "28 м² жилого пространства из 40-футового контейнера.",
+        10,
+    ),
+    (
+        "house", "40ft", "Резиденция Серо 40ft",
+        28, 2_100_000, 60, "new",
+        "Просторный дом с панорамным остеклением и отделкой в серо-бетонном стиле.",
+        20,
+    ),
+    (
+        "house", "2x40ft", "Дуплекс Рустик 40ft×2",
+        56, 3_450_000, 75, "premium",
+        "Двухэтажный дом из двух 40-футовых контейнеров. "
+        "56 м² с рустикальной отделкой из натурального дерева.",
+        30,
+    ),
+    (
+        "house", "20ft", "Коттедж Бриз 20ft",
+        14, 790_000, 30, None,
+        "Компактный загородный дом из 20-футового контейнера. "
+        "Идеален как дача или гостевой дом.",
+        40,
+    ),
+    (
+        "office", "20ft", "Офис Нордик 20ft",
+        14, 980_000, 25, None,
+        "Мобильный офис из 20-футового контейнера в скандинавском стиле. "
+        "Быстрый монтаж, готов к работе за 25 дней.",
+        10,
+    ),
+    (
+        "office", "3x40ft", "Офис-комплекс Эко 40ft×3",
+        84, 5_200_000, 90, None,
+        "Офисный комплекс из трёх 40-футовых контейнеров. "
+        "84 м² с open-space зонированием и эко-отделкой.",
+        20,
+    ),
 ]
 
 
@@ -41,60 +116,61 @@ async def seed() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     async with SessionLocal() as session:
-        existing_cats = {
-            c.slug: c
-            for c in (await session.execute(select(Category))).scalars().all()
-        }
-        for slug, title, order in CATEGORIES:
-            if slug in existing_cats:
+        # --- calc_options ---
+        existing_opts = set(
+            (r.group.value, r.title)
+            for r in (await session.execute(select(CalcOption))).scalars().all()
+        )
+        for group_str, title, price_delta, area_m2, sort_order in CALC_OPTIONS:
+            if (group_str, title) in existing_opts:
                 continue
-            session.add(Category(slug=slug, title=title, sort_order=order, is_active=True))
+            session.add(
+                CalcOption(
+                    group=CalcOptionGroup(group_str),
+                    title=title,
+                    price_delta=Decimal(str(price_delta)),
+                    area_m2=Decimal(str(area_m2)) if area_m2 is not None else None,
+                    sort_order=sort_order,
+                    is_active=True,
+                )
+            )
         await session.commit()
 
-        cat_map = {
-            c.slug: c
-            for c in (await session.execute(select(Category))).scalars().all()
-        }
-
-        for cat_slug, name, area, photo_name, order, source_url in SKANDY_MODELS:
-            cat = cat_map[cat_slug]
-            title = f"Проект «{name}»"
-            existing = (
-                await session.execute(
-                    select(Product).where(
-                        Product.category_id == cat.id,
-                        Product.title == title,
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing:
+        # --- delivery_cities ---
+        existing_cities = set(
+            r.name
+            for r in (await session.execute(select(DeliveryCity))).scalars().all()
+        )
+        for name, distance_km, sort_order in DELIVERY_CITIES:
+            if name in existing_cities:
                 continue
-            product = Product(
-                category_id=cat.id,
-                kind=ProductKind.model,
-                title=title,
-                area_m2=Decimal(str(area)),
-                price_note="по запросу",
-                source_url=source_url,
-                sort_order=order,
-                is_active=True,
-            )
-            session.add(product)
-            await session.flush()
+            session.add(DeliveryCity(name=name, distance_km=distance_km, sort_order=sort_order))
+        await session.commit()
 
-            photo_path = PHOTO_DIR / photo_name
-            if photo_path.exists():
-                session.add(
-                    ProductPhoto(
-                        product_id=product.id,
-                        local_path=str(photo_path),
-                        is_cover=True,
-                        sort_order=0,
-                    )
+        # --- products ---
+        existing_products = set(
+            r.title
+            for r in (await session.execute(select(Product))).scalars().all()
+        )
+        for (
+            type_str, spec_str, title, area_m2, price_from, build_days, badge_str, desc, sort_order
+        ) in PRODUCTS:
+            if title in existing_products:
+                continue
+            session.add(
+                Product(
+                    type=ProductType(type_str),
+                    container_spec=ContainerSpec(spec_str),
+                    title=title,
+                    area_m2=Decimal(str(area_m2)),
+                    price_from=Decimal(str(price_from)),
+                    build_days=build_days,
+                    badge=BadgeType(badge_str) if badge_str else None,
+                    description=desc,
+                    sort_order=sort_order,
+                    is_active=True,
                 )
-            else:
-                print(f"WARN: photo missing for {name}: {photo_path}")
-
+            )
         await session.commit()
 
     print("Seed done.")
