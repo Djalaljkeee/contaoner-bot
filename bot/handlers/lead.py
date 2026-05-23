@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import settings
-from bot.db.models import Admin, AdminRole, LeadSource, User
+from bot.db.models import Admin, AdminRole, LeadSource, LeadType, User
 from bot.keyboards.lead import (
     CANCEL_BTN,
     SKIP_BTN,
@@ -29,7 +29,6 @@ log = logging.getLogger(__name__)
 router = Router()
 
 
-# ---------- entry ----------
 async def _start(
     target: Message,
     *,
@@ -44,8 +43,10 @@ async def _start(
     user = await upsert_user(session, user_id, username, default_name)
     data: dict = {
         "source": source.value,
+        "lead_type": LeadType.regular.value,
         "product_id": product_id,
         "product_title": None,
+        "calc_config": None,
         "name": None,
         "phone": None,
         "message_text": None,
@@ -101,7 +102,6 @@ async def lead_from_product(call: CallbackQuery, state: FSMContext, session: Asy
     )
 
 
-# ---------- cancel ----------
 @router.message(F.text == CANCEL_BTN)
 async def cancel_msg(message: Message, state: FSMContext):
     if await state.get_state() is None:
@@ -121,7 +121,6 @@ async def cancel_cb(call: CallbackQuery, state: FSMContext):
     await call.message.answer("Отменено.", reply_markup=main_menu_kb())
 
 
-# ---------- step 1: name ----------
 @router.message(LeadForm.waiting_name, F.text)
 async def step_name(message: Message, state: FSMContext, session: AsyncSession):
     text = (message.text or "").strip()
@@ -141,7 +140,6 @@ async def step_name(message: Message, state: FSMContext, session: AsyncSession):
     )
 
 
-# ---------- step 2: phone ----------
 @router.message(LeadForm.waiting_phone, F.contact)
 async def step_phone_contact(message: Message, state: FSMContext, session: AsyncSession):
     contact = message.contact
@@ -161,11 +159,11 @@ async def step_phone_contact(message: Message, state: FSMContext, session: Async
 async def step_phone_text(message: Message, state: FSMContext, session: AsyncSession):
     text = (message.text or "").strip()
     if text.startswith("Использовать "):
-        text = text[len("Использовать ") :]
+        text = text[len("Использовать "):]
     phone = normalize_phone(text)
     if not phone:
         await message.answer(
-            "Не распознал номер. Пример: +7 (985) 888-58-86.\nПопробуйте ещё раз."
+            "Не распознал номер. Пример: +7 (965) 555-33-66.\nПопробуйте ещё раз."
         )
         return
     await _on_phone_ok(message, state, session, phone)
@@ -183,7 +181,6 @@ async def _on_phone_ok(
     )
 
 
-# ---------- step 3: message ----------
 @router.message(LeadForm.waiting_message, F.text)
 async def step_message(message: Message, state: FSMContext):
     text = (message.text or "").strip()
@@ -206,6 +203,9 @@ async def _ask_confirmation(message: Message, state: FSMContext):
     ]
     if data.get("product_title"):
         parts.append(f"Проект: {data['product_title']}")
+    if data.get("calc_config"):
+        cfg = data["calc_config"]
+        parts.append(f"Конфигурация: {cfg['module']['title']}, итого {cfg['total']:,} ₽".replace(",", " "))
     parts.append(f"Сообщение: {data.get('message_text') or '—'}")
     parts.append("")
     parts.append("Отправляем?")
@@ -213,12 +213,12 @@ async def _ask_confirmation(message: Message, state: FSMContext):
     await message.answer("\n".join(parts), reply_markup=confirm_kb())
 
 
-# ---------- step 4: confirm ----------
 @router.callback_query(LeadForm.confirming, F.data == "lead_send")
-async def step_send(
-    call: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot
-):
+async def step_send(call: CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot):
     data = await state.get_data()
+    calc_config: Any = data.get("calc_config")
+    lead_type = LeadType(data.get("lead_type", LeadType.regular.value))
+
     lead = await create_lead(
         session,
         user_id=call.from_user.id,
@@ -226,7 +226,9 @@ async def step_send(
         phone=data["phone"],
         message=data.get("message_text"),
         source=LeadSource(data["source"]),
+        lead_type=lead_type,
         product_id=data.get("product_id"),
+        calc_config=calc_config,
     )
     try:
         await notify_managers(
@@ -234,6 +236,7 @@ async def step_send(
             settings.managers_chat_id,
             lead,
             data.get("product_title"),
+            calc_config,
         )
     except Exception:
         log.exception("Failed to notify managers chat")
@@ -266,7 +269,6 @@ async def step_edit(call: CallbackQuery, state: FSMContext):
     )
 
 
-# ---------- managers: take in work ----------
 @router.callback_query(F.data.startswith("lead_take:"))
 async def take(call: CallbackQuery, session: AsyncSession):
     lead_id = int(call.data.split(":", 1)[1])

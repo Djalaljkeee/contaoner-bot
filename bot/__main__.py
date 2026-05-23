@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from bot.config import settings
 from bot.db.base import SessionLocal, engine
 from bot.db.models import Base
-from bot.handlers import about, catalog, lead, start
+from bot.handlers import about, calculator, catalog, lead, start
 
 
 class DbSessionMiddleware:
@@ -43,6 +43,7 @@ async def main() -> None:
     dp.callback_query.middleware(session_mw)
 
     dp.include_router(start.router)
+    dp.include_router(calculator.router)
     dp.include_router(catalog.router)
     dp.include_router(lead.router)
     dp.include_router(about.router)
