@@ -28,5 +28,19 @@ services:
       DB_URL: postgresql+asyncpg://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containers}
     command: sh -c "python -m scripts.seed && exec python -m bot"
 
+  bot_max:
+    image: ghcr.io/djalaljkeee/contaoner-bot-max:${BOT_MAX_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.max
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      MAX_DB_URL: postgresql+asyncpg://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containers}
+    command: sh -c "python -m scripts.seed_max && exec python -m bot_max"
+
 volumes:
   pg_data:
