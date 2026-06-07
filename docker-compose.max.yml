@@ -1,0 +1,12 @@
+services:
+  max_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.max
+    restart: unless-stopped
+    env_file: .env.max
+    volumes:
+      - max_bot_data:/app/data
+
+volumes:
+  max_bot_data:
