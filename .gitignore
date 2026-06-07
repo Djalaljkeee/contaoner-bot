@@ -8,3 +8,4 @@ data/bot.db-journal
 *.log
 .idea/
 .vscode/
+*.db
